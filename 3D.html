@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3Dプリンター管理ツール</title>
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: center;
+        }
+        th {
+            background-color: #f4f4f4;
+        }
+    </style>
+</head>
+<body>
+    <h1>3Dプリンター管理ツール</h1>
+
+    <!-- 1. 機種選択 -->
+    <label for="printer">3Dプリンターの機種選択:</label>
+    <select id="printer" onchange="updateFilamentOptions(); updateUnit()">
+        <option value="FLASHFORGE Adventure3X">FLASHFORGE Adventure3X</option>
+        <option value="Mars 5 Ultra">Mars 5 Ultra</option>
+    </select>
+    <br><br>
+
+    <!-- 2. フィラメント種類 -->
+    <label for="filament">フィラメントの種類:</label>
+    <select id="filament"></select>
+    <br><br>
+
+    <!-- 3. フィラメント使用量、作成時間、開始日時 -->
+    <label for="filamentAmount">フィラメントの使用量 (<span id="unit">g</span>):</label>
+    <input type="number" id="filamentAmount" min="1" required>
+    <br><br>
+
+    <label for="creationTime">作成にかかる時間 (日:時間:分):</label>
+    <input type="number" id="creationDays" placeholder="日" min="0" required> :
+    <input type="number" id="creationHours" placeholder="時間" min="0" max="23" required> :
+    <input type="number" id="creationMinutes" placeholder="分" min="0" max="59" required>
+    <br><br>
+
+    <label for="startTime">作成開始日時 (JST):</label>
+    <input type="datetime-local" id="startTime" required>
+    <button onclick="setCurrentTime()">現在時刻を設定</button>
+    <br><br>
+
+    <button onclick="addToList()">リストに追加</button>
+    <br><br>
+
+    <!-- 4. リストとテーブル -->
+    <h2>作成リスト</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>機種</th>
+                <th>フィラメント種類</th>
+                <th>使用量</th>
+                <th>作成時間 (日:時間:分)</th>
+                <th>開始日時</th>
+                <th>終了予定時刻</th>
+            </tr>
+        </thead>
+        <tbody id="listTable">
+        </tbody>
+    </table>
+
+    <!-- 5. 合計情報 -->
+    <h2>集計情報</h2>
+    <div id="filamentTotals">
+        <!-- フィラメントごとの合計量がここに表示されます -->
+    </div>
+
+    <script>
+        const listTable = document.getElementById('listTable');
+        const filamentTotalsDiv = document.getElementById('filamentTotals');
+        const unitSpan = document.getElementById('unit');
+
+        let totalFilamentByType = {}; // フィラメント種類ごとの合計量
+
+        const filamentOptions = {
+            "FLASHFORGE Adventure3X": ["PLA", "ABS", "PETG", "PA", "PC"],
+            "Mars 5 Ultra": ["スタンダードレジン", "水洗いレジン", "ABSライクレジン"]
+        };
+
+        function updateFilamentOptions() {
+            const printer = document.getElementById('printer').value;
+            const filamentSelect = document.getElementById('filament');
+            filamentSelect.innerHTML = ''; // オプションをクリア
+
+            filamentOptions[printer].forEach(filament => {
+                const option = document.createElement('option');
+                option.value = filament;
+                option.textContent = filament;
+                filamentSelect.appendChild(option);
+            });
+        }
+
+        function updateUnit() {
+            const printer = document.getElementById('printer').value;
+            unitSpan.textContent = printer === "Mars 5 Ultra" ? "ml" : "g";
+        }
+
+        function setCurrentTime() {
+            const now = new Date();
+            const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000); // GMTからJSTに変換
+            const isoString = jstNow.toISOString().slice(0, 16); // ISO形式で日付部分を抽出
+            document.getElementById('startTime').value = isoString;
+        }
+
+        function addToList() {
+            const printer = document.getElementById('printer').value;
+            const filament = document.getElementById('filament').value;
+            const filamentAmount = parseFloat(document.getElementById('filamentAmount').value);
+            const days = parseInt(document.getElementById('creationDays').value) || 0;
+            const hours = parseInt(document.getElementById('creationHours').value) || 0;
+            const minutes = parseInt(document.getElementById('creationMinutes').value) || 0;
+            const startTimeInput = document.getElementById('startTime').value;
+            const startTime = new Date(startTimeInput);
+            const unit = printer === "Mars 5 Ultra" ? "ml" : "g";
+
+            if (isNaN(filamentAmount) || !startTimeInput || (days === 0 && hours === 0 && minutes === 0)) {
+                alert("すべての項目を正確に入力してください。");
+                return;
+            }
+
+            // 作成時間を計算
+            const totalMinutes = days * 1440 + hours * 60 + minutes;
+            const endTime = new Date(startTime.getTime() + totalMinutes * 60000); // ミリ秒単位で加算
+
+            // 作成時間をフォーマット
+            const formattedTime = `${String(days).padStart(2, '0')}:${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+
+            // リストに追加
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${printer}</td>
+                <td>${filament}</td>
+                <td>${filamentAmount.toFixed(1)} ${unit}</td>
+                <td>${formattedTime}</td>
+                <td>${startTime.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}</td>
+                <td>${endTime.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}</td>
+            `;
+            listTable.appendChild(row);
+
+            // フィラメントごとの合計を更新
+            if (!totalFilamentByType[filament]) {
+                totalFilamentByType[filament] = 0;
+            }
+            totalFilamentByType[filament] += filamentAmount;
+
+            // 合計情報を更新
+            updateFilamentTotals();
+        }
+
+        function updateFilamentTotals() {
+            filamentTotalsDiv.innerHTML = '';
+            for (const [filament, total] of Object.entries(totalFilamentByType)) {
+                const p = document.createElement('p');
+                p.textContent = `${filament}: ${total.toFixed(1)}`;
+                filamentTotalsDiv.appendChild(p);
+            }
+        }
+
+        // 初期設定
+        updateFilamentOptions();
+        updateUnit();
+    </script>
+</body>
+</html>
